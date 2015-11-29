@@ -1,0 +1,275 @@
+<?php
+/** @package    Pizzaria Meveana::Controller */
+
+/** import supporting libraries */
+require_once("AppBaseController.php");
+require_once("Model/Pedido.php");
+
+/**
+ * PedidoController is the controller class for the Pedido object.  The
+ * controller is responsible for processing input from the user, reading/updating
+ * the model as necessary and displaying the appropriate view.
+ *
+ * @package Pizzaria Meveana::Controller
+ * @author ClassBuilder
+ * @version 1.0
+ */
+class PedidoController extends AppBaseController
+{
+
+	/**
+	 * Override here for any controller-specific functionality
+	 *
+	 * @inheritdocs
+	 */
+	protected function Init()
+	{
+		parent::Init();
+
+		// TODO: add controller-wide bootstrap code
+		
+		// TODO: if authentiation is required for this entire controller, for example:
+		// $this->RequirePermission(ExampleUser::$PERMISSION_USER,'SecureExample.LoginForm');
+	}
+
+	/**
+	 * Displays a list view of Pedido objects
+	 */
+	public function ListView()
+	{
+		$this->Render();
+	}
+
+	/**
+	 * API Method queries for Pedido records and render as JSON
+	 */
+	public function Query()
+	{
+		try
+		{
+			$criteria = new PedidoCriteria();
+			
+			// TODO: this will limit results based on all properties included in the filter list 
+			$filter = RequestUtil::Get('filter');
+			if ($filter) $criteria->AddFilter(
+				new CriteriaFilter('Id,Datacriacao,Observacao,Dataentrega,Valorfrete,Valordesconto,Valortotal,Statuspedido,Formapagamento,Vendedor,Cliente,Enderecoentrega,Itempedido'
+				, '%'.$filter.'%')
+			);
+
+			// TODO: this is generic query filtering based only on criteria properties
+			foreach (array_keys($_REQUEST) as $prop)
+			{
+				$prop_normal = ucfirst($prop);
+				$prop_equals = $prop_normal.'_Equals';
+
+				if (property_exists($criteria, $prop_normal))
+				{
+					$criteria->$prop_normal = RequestUtil::Get($prop);
+				}
+				elseif (property_exists($criteria, $prop_equals))
+				{
+					// this is a convenience so that the _Equals suffix is not needed
+					$criteria->$prop_equals = RequestUtil::Get($prop);
+				}
+			}
+
+			$output = new stdClass();
+
+			// if a sort order was specified then specify in the criteria
+ 			$output->orderBy = RequestUtil::Get('orderBy');
+ 			$output->orderDesc = RequestUtil::Get('orderDesc') != '';
+ 			if ($output->orderBy) $criteria->SetOrder($output->orderBy, $output->orderDesc);
+
+			$page = RequestUtil::Get('page');
+
+			if ($page != '')
+			{
+				// if page is specified, use this instead (at the expense of one extra count query)
+				$pagesize = $this->GetDefaultPageSize();
+
+				$pedidos = $this->Phreezer->Query('Pedido',$criteria)->GetDataPage($page, $pagesize);
+				$output->rows = $pedidos->ToObjectArray(true,$this->SimpleObjectParams());
+				$output->totalResults = $pedidos->TotalResults;
+				$output->totalPages = $pedidos->TotalPages;
+				$output->pageSize = $pedidos->PageSize;
+				$output->currentPage = $pedidos->CurrentPage;
+			}
+			else
+			{
+				// return all results
+				$pedidos = $this->Phreezer->Query('Pedido',$criteria);
+				$output->rows = $pedidos->ToObjectArray(true, $this->SimpleObjectParams());
+				$output->totalResults = count($output->rows);
+				$output->totalPages = 1;
+				$output->pageSize = $output->totalResults;
+				$output->currentPage = 1;
+			}
+
+
+			$this->RenderJSON($output, $this->JSONPCallback());
+		}
+		catch (Exception $ex)
+		{
+			$this->RenderExceptionJSON($ex);
+		}
+	}
+
+	/**
+	 * API Method retrieves a single Pedido record and render as JSON
+	 */
+	public function Read()
+	{
+		try
+		{
+			$pk = $this->GetRouter()->GetUrlParam('id');
+			$pedido = $this->Phreezer->Get('Pedido',$pk);
+			$this->RenderJSON($pedido, $this->JSONPCallback(), true, $this->SimpleObjectParams());
+		}
+		catch (Exception $ex)
+		{
+			$this->RenderExceptionJSON($ex);
+		}
+	}
+
+	/**
+	 * API Method inserts a new Pedido record and render response as JSON
+	 */
+	public function Create()
+	{
+		try
+		{
+						
+			$json = json_decode(RequestUtil::GetBody());
+
+			if (!$json)
+			{
+				throw new Exception('The request body does not contain valid JSON');
+			}
+
+			$pedido = new Pedido($this->Phreezer);
+
+			// TODO: any fields that should not be inserted by the user should be commented out
+
+			// this is an auto-increment.  uncomment if updating is allowed
+			// $pedido->Id = $this->SafeGetVal($json, 'id');
+
+			$pedido->Datacriacao = date('Y-m-d H:i:s',strtotime($this->SafeGetVal($json, 'datacriacao')));
+			$pedido->Observacao = $this->SafeGetVal($json, 'observacao');
+			$pedido->Dataentrega = date('Y-m-d H:i:s',strtotime($this->SafeGetVal($json, 'dataentrega')));
+			$pedido->Valorfrete = $this->SafeGetVal($json, 'valorfrete');
+			$pedido->Valordesconto = $this->SafeGetVal($json, 'valordesconto');
+			$pedido->Valortotal = $this->SafeGetVal($json, 'valortotal');
+			$pedido->Statuspedido = $this->SafeGetVal($json, 'statuspedido');
+			$pedido->Formapagamento = $this->SafeGetVal($json, 'formapagamento');
+			$pedido->Vendedor = $this->SafeGetVal($json, 'vendedor');
+			$pedido->Cliente = $this->SafeGetVal($json, 'cliente');
+			$pedido->Enderecoentrega = $this->SafeGetVal($json, 'enderecoentrega');
+			$pedido->Itempedido = $this->SafeGetVal($json, 'itempedido');
+
+			$pedido->Validate();
+			$errors = $pedido->GetValidationErrors();
+
+			if (count($errors) > 0)
+			{
+				$this->RenderErrorJSON('Please check the form for errors',$errors);
+			}
+			else
+			{
+				$pedido->Save();
+				$this->RenderJSON($pedido, $this->JSONPCallback(), true, $this->SimpleObjectParams());
+			}
+
+		}
+		catch (Exception $ex)
+		{
+			$this->RenderExceptionJSON($ex);
+		}
+	}
+
+	/**
+	 * API Method updates an existing Pedido record and render response as JSON
+	 */
+	public function Update()
+	{
+		try
+		{
+						
+			$json = json_decode(RequestUtil::GetBody());
+
+			if (!$json)
+			{
+				throw new Exception('The request body does not contain valid JSON');
+			}
+
+			$pk = $this->GetRouter()->GetUrlParam('id');
+			$pedido = $this->Phreezer->Get('Pedido',$pk);
+
+			// TODO: any fields that should not be updated by the user should be commented out
+
+			// this is a primary key.  uncomment if updating is allowed
+			// $pedido->Id = $this->SafeGetVal($json, 'id', $pedido->Id);
+
+			$pedido->Datacriacao = date('Y-m-d H:i:s',strtotime($this->SafeGetVal($json, 'datacriacao', $pedido->Datacriacao)));
+			$pedido->Observacao = $this->SafeGetVal($json, 'observacao', $pedido->Observacao);
+			$pedido->Dataentrega = date('Y-m-d H:i:s',strtotime($this->SafeGetVal($json, 'dataentrega', $pedido->Dataentrega)));
+			$pedido->Valorfrete = $this->SafeGetVal($json, 'valorfrete', $pedido->Valorfrete);
+			$pedido->Valordesconto = $this->SafeGetVal($json, 'valordesconto', $pedido->Valordesconto);
+			$pedido->Valortotal = $this->SafeGetVal($json, 'valortotal', $pedido->Valortotal);
+			$pedido->Statuspedido = $this->SafeGetVal($json, 'statuspedido', $pedido->Statuspedido);
+			$pedido->Formapagamento = $this->SafeGetVal($json, 'formapagamento', $pedido->Formapagamento);
+			$pedido->Vendedor = $this->SafeGetVal($json, 'vendedor', $pedido->Vendedor);
+			$pedido->Cliente = $this->SafeGetVal($json, 'cliente', $pedido->Cliente);
+			$pedido->Enderecoentrega = $this->SafeGetVal($json, 'enderecoentrega', $pedido->Enderecoentrega);
+			$pedido->Itempedido = $this->SafeGetVal($json, 'itempedido', $pedido->Itempedido);
+
+			$pedido->Validate();
+			$errors = $pedido->GetValidationErrors();
+
+			if (count($errors) > 0)
+			{
+				$this->RenderErrorJSON('Please check the form for errors',$errors);
+			}
+			else
+			{
+				$pedido->Save();
+				$this->RenderJSON($pedido, $this->JSONPCallback(), true, $this->SimpleObjectParams());
+			}
+
+
+		}
+		catch (Exception $ex)
+		{
+
+
+			$this->RenderExceptionJSON($ex);
+		}
+	}
+
+	/**
+	 * API Method deletes an existing Pedido record and render response as JSON
+	 */
+	public function Delete()
+	{
+		try
+		{
+						
+			// TODO: if a soft delete is prefered, change this to update the deleted flag instead of hard-deleting
+
+			$pk = $this->GetRouter()->GetUrlParam('id');
+			$pedido = $this->Phreezer->Get('Pedido',$pk);
+
+			$pedido->Delete();
+
+			$output = new stdClass();
+
+			$this->RenderJSON($output, $this->JSONPCallback());
+
+		}
+		catch (Exception $ex)
+		{
+			$this->RenderExceptionJSON($ex);
+		}
+	}
+}
+
+?>
